@@ -22,7 +22,7 @@ up your Python script to best utilise the :class:`Workflow` object.
 from __future__ import print_function, unicode_literals
 
 import binascii
-import pickle
+import cPickle
 from copy import deepcopy
 import json
 import logging
@@ -35,9 +35,6 @@ import shutil
 import string
 import subprocess
 import sys
-
-import unicode
-
 import time
 import unicodedata
 
@@ -46,9 +43,8 @@ try:
 except ImportError:  # pragma: no cover
     import xml.etree.ElementTree as ET
 
-# imported to maintain API
-from util import AcquisitionError  # noqa: F401
 from util import (
+    AcquisitionError,  # imported to maintain API
     atomic_writer,
     LockFile,
     uninterruptible,
@@ -647,7 +643,7 @@ class CPickleSerializer(object):
         :rtype: object
 
         """
-        return pickle.load(file_obj)
+        return cPickle.load(file_obj)
 
     @classmethod
     def dump(cls, obj, file_obj):
@@ -661,7 +657,7 @@ class CPickleSerializer(object):
         :type file_obj: ``file`` object
 
         """
-        return pickle.dump(obj, file_obj, protocol=-1)
+        return cPickle.dump(obj, file_obj, protocol=-1)
 
 
 class PickleSerializer(object):
@@ -896,9 +892,9 @@ class Workflow(object):
     storing & caching data, using Keychain, and generating Script
     Filter feedback.
 
-    ``Workflow`` is compatible with Alfred 2+. Subclass
-    :class:`~workflow.Workflow3` provides additional features,
-    only available in Alfred 3+, such as workflow variables.
+    ``Workflow`` is compatible with both Alfred 2 and 3. The
+    :class:`~workflow.Workflow3` subclass provides additional,
+    Alfred 3-only features, such as workflow variables.
 
     :param default_settings: default workflow settings. If no settings file
         exists, :class:`Workflow.settings` will be pre-populated with
@@ -969,9 +965,8 @@ class Workflow(object):
         self._last_version_run = UNSET
         # Cache for regex patterns created for filter keys
         self._search_pattern_cache = {}
-        #: Prefix for all magic arguments.
-        #: The default value is ``workflow:`` so keyword
-        #: ``config`` would match user query ``workflow:config``.
+        # Magic arguments
+        #: The prefix for all magic arguments. Default is ``workflow:``
         self.magic_prefix = 'workflow:'
         #: Mapping of available magic arguments. The built-in magic
         #: arguments are registered by default. To add your own magic arguments
@@ -1055,30 +1050,31 @@ class Workflow(object):
         data = {}
 
         for key in (
-                'debug',
-                'preferences',
-                'preferences_localhash',
-                'theme',
-                'theme_background',
-                'theme_subtext',
-                'version',
-                'version_build',
-                'workflow_bundleid',
-                'workflow_cache',
-                'workflow_data',
-                'workflow_name',
-                'workflow_uid',
-                'workflow_version'):
+                'alfred_debug',
+                'alfred_preferences',
+                'alfred_preferences_localhash',
+                'alfred_theme',
+                'alfred_theme_background',
+                'alfred_theme_subtext',
+                'alfred_version',
+                'alfred_version_build',
+                'alfred_workflow_bundleid',
+                'alfred_workflow_cache',
+                'alfred_workflow_data',
+                'alfred_workflow_name',
+                'alfred_workflow_uid',
+                'alfred_workflow_version'):
 
-            value = os.getenv('alfred_' + key, '')
+            value = os.getenv(key)
 
-            if value:
-                if key in ('debug', 'version_build', 'theme_subtext'):
+            if isinstance(value, str):
+                if key in ('alfred_debug', 'alfred_version_build',
+                           'alfred_theme_subtext'):
                     value = int(value)
                 else:
                     value = self.decode(value)
 
-            data[key] = value
+            data[key[7:]] = value
 
         self._alfred_env = data
 
@@ -1115,7 +1111,12 @@ class Workflow(object):
         :rtype: ``bool``
 
         """
-        return self.alfred_env.get('debug') == 1
+        if self._debugging is None:
+            if self.alfred_env.get('debug') == 1:
+                self._debugging = True
+            else:
+                self._debugging = False
+        return self._debugging
 
     @property
     def name(self):
@@ -1224,18 +1225,14 @@ class Workflow(object):
         """Path to workflow's cache directory.
 
         The cache directory is a subdirectory of Alfred's own cache directory
-        in ``~/Library/Caches``. The full path is in Alfred 4+ is:
-
-        ``~/Library/Caches/com.runningwithcrayons.Alfred/Workflow Data/<bundle id>``
-
-        For earlier versions:
+        in ``~/Library/Caches``. The full path is:
 
         ``~/Library/Caches/com.runningwithcrayons.Alfred-X/Workflow Data/<bundle id>``
 
-        where ``Alfred-X`` may be ``Alfred-2`` or ``Alfred-3``.
+        ``Alfred-X`` may be ``Alfred-2`` or ``Alfred-3``.
 
-        Returns:
-            unicode: full path to workflow's cache directory
+        :returns: full path to workflow's cache directory
+        :rtype: ``unicode``
 
         """
         if self.alfred_env.get('workflow_cache'):
@@ -1260,18 +1257,12 @@ class Workflow(object):
         """Path to workflow's data directory.
 
         The data directory is a subdirectory of Alfred's own data directory in
-        ``~/Library/Application Support``. The full path for Alfred 4+ is:
+        ``~/Library/Application Support``. The full path is:
 
-        ``~/Library/Application Support/Alfred/Workflow Data/<bundle id>``
+        ``~/Library/Application Support/Alfred 2/Workflow Data/<bundle id>``
 
-        For earlier versions, the path is:
-
-        ``~/Library/Application Support/Alfred X/Workflow Data/<bundle id>``
-
-        where ``Alfred X` is ``Alfred 2`` or ``Alfred 3``.
-
-        Returns:
-            unicode: full path to workflow data directory
+        :returns: full path to workflow data directory
+        :rtype: ``unicode``
 
         """
         if self.alfred_env.get('workflow_data'):
@@ -1293,8 +1284,8 @@ class Workflow(object):
     def workflowdir(self):
         """Path to workflow's root directory (where ``info.plist`` is).
 
-        Returns:
-            unicode: full path to workflow root directory
+        :returns: full path to workflow root directory
+        :rtype: ``unicode``
 
         """
         if not self._workflowdir:
@@ -2270,16 +2261,17 @@ class Workflow(object):
         :returns: ``True`` if an update is available, else ``False``
 
         """
-        key = '__workflow_latest_version'
         # Create a new workflow object to ensure standard serialiser
         # is used (update.py is called without the user's settings)
-        status = Workflow().cached_data(key, max_age=0)
+        update_data = Workflow().cached_data('__workflow_update_status',
+                                             max_age=0)
 
-        # self.logger.debug('update status: %r', status)
-        if not status or not status.get('available'):
+        self.logger.debug('update_data: %r', update_data)
+
+        if not update_data or not update_data.get('available'):
             return False
 
-        return status['available']
+        return update_data['available']
 
     @property
     def prereleases(self):
@@ -2312,7 +2304,6 @@ class Workflow(object):
         :type force: ``Boolean``
 
         """
-        key = '__workflow_latest_version'
         frequency = self._update_settings.get('frequency',
                                               DEFAULT_UPDATE_FREQUENCY)
 
@@ -2321,9 +2312,10 @@ class Workflow(object):
             return
 
         # Check for new version if it's time
-        if (force or not self.cached_data_fresh(key, frequency * 86400)):
+        if (force or not self.cached_data_fresh(
+                '__workflow_update_status', frequency * 86400)):
 
-            repo = self._update_settings['github_slug']
+            github_slug = self._update_settings['github_slug']
             # version = self._update_settings['version']
             version = str(self.version)
 
@@ -2333,7 +2325,8 @@ class Workflow(object):
             update_script = os.path.join(os.path.dirname(__file__),
                                          b'update.py')
 
-            cmd = ['/usr/bin/python', update_script, 'check', repo, version]
+            cmd = ['/usr/bin/python', update_script, 'check', github_slug,
+                   version]
 
             if self.prereleases:
                 cmd.append('--prereleases')
@@ -2359,11 +2352,11 @@ class Workflow(object):
         """
         import update
 
-        repo = self._update_settings['github_slug']
+        github_slug = self._update_settings['github_slug']
         # version = self._update_settings['version']
         version = str(self.version)
 
-        if not update.check_update(repo, version, self.prereleases):
+        if not update.check_update(github_slug, version, self.prereleases):
             return False
 
         from background import run_in_background
@@ -2372,7 +2365,8 @@ class Workflow(object):
         update_script = os.path.join(os.path.dirname(__file__),
                                      b'update.py')
 
-        cmd = ['/usr/bin/python', update_script, 'install', repo, version]
+        cmd = ['/usr/bin/python', update_script, 'install', github_slug,
+               version]
 
         if self.prereleases:
             cmd.append('--prereleases')
@@ -2642,27 +2636,28 @@ class Workflow(object):
 
     def open_log(self):
         """Open :attr:`logfile` in default app (usually Console.app)."""
-        subprocess.call(['open', self.logfile])  # nosec
+        subprocess.call(['open', self.logfile])
 
     def open_cachedir(self):
         """Open the workflow's :attr:`cachedir` in Finder."""
-        subprocess.call(['open', self.cachedir])  # nosec
+        subprocess.call(['open', self.cachedir])
 
     def open_datadir(self):
         """Open the workflow's :attr:`datadir` in Finder."""
-        subprocess.call(['open', self.datadir])  # nosec
+        subprocess.call(['open', self.datadir])
 
     def open_workflowdir(self):
         """Open the workflow's :attr:`workflowdir` in Finder."""
-        subprocess.call(['open', self.workflowdir])  # nosec
+        subprocess.call(['open', self.workflowdir])
 
     def open_terminal(self):
         """Open a Terminal window at workflow's :attr:`workflowdir`."""
-        subprocess.call(['open', '-a', 'Terminal', self.workflowdir])  # nosec
+        subprocess.call(['open', '-a', 'Terminal',
+                        self.workflowdir])
 
     def open_help(self):
         """Open :attr:`help_url` in default browser."""
-        subprocess.call(['open', self.help_url])  # nosec
+        subprocess.call(['open', self.help_url])
 
         return 'Opening workflow help URL in browser'
 

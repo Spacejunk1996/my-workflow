@@ -7,11 +7,11 @@
 # Created on 2016-06-25
 #
 
-"""An Alfred 3+ version of :class:`~workflow.Workflow`.
+"""An Alfred 3-only version of :class:`~workflow.Workflow`.
 
-:class:`~workflow.Workflow3` supports new features, such as
+:class:`~workflow.Workflow3` supports Alfred 3's new features, such as
 setting :ref:`workflow-variables` and
-:class:`the more advanced modifiers <Modifier>` supported by Alfred 3+.
+:class:`the more advanced modifiers <Modifier>` supported by Alfred 3.
 
 In order for the feedback mechanism to work correctly, it's important
 to create :class:`Item3` and :class:`Modifier` objects via the
@@ -50,16 +50,12 @@ class Variables(dict):
     information.
 
     Args:
-        arg (unicode or list, optional): Main output/``{query}``.
+        arg (unicode, optional): Main output/``{query}``.
         **variables: Workflow variables to set.
 
-    In Alfred 4.1+ and Alfred-Workflow 1.40+, ``arg`` may also be a
-    :class:`list` or :class:`tuple`.
 
     Attributes:
-        arg (unicode or list): Output value (``{query}``).
-            In Alfred 4.1+ and Alfred-Workflow 1.40+, ``arg`` may also be a
-            :class:`list` or :class:`tuple`.
+        arg (unicode): Output value (``{query}``).
         config (dict): Configuration for downstream workflow element.
 
     """
@@ -72,7 +68,7 @@ class Variables(dict):
 
     @property
     def obj(self):
-        """``alfredworkflow`` :class:`dict`."""
+        """Return ``alfredworkflow`` `dict`."""
         o = {}
         if self:
             d2 = {}
@@ -96,10 +92,10 @@ class Variables(dict):
 
         """
         if not self and not self.config:
-            if not self.arg:
-                return u''
-            if isinstance(self.arg, unicode):
+            if self.arg:
                 return self.arg
+            else:
+                return u''
 
         return json.dumps(self.obj)
 
@@ -254,7 +250,7 @@ class Modifier(object):
 
 
 class Item3(object):
-    """Represents a feedback item for Alfred 3+.
+    """Represents a feedback item for Alfred 3.
 
     Generates Alfred-compliant JSON for a single item.
 
@@ -331,9 +327,6 @@ class Item3(object):
             icontype (unicode, optional): Type of icon.  See
                 :meth:`Workflow.add_item() <workflow.Workflow.add_item>`
                 for valid values.
-
-        In Alfred 4.1+ and Alfred-Workflow 1.40+, ``arg`` may also be a
-        :class:`list` or :class:`tuple`.
 
         Returns:
             Modifier: Configured :class:`Modifier`.
@@ -454,7 +447,7 @@ class Item3(object):
 
 
 class Workflow3(Workflow):
-    """Workflow class that generates Alfred 3+ feedback.
+    """Workflow class that generates Alfred 3 feedback.
 
     It is a subclass of :class:`~workflow.Workflow` and most of its
     methods are documented there.
@@ -483,18 +476,18 @@ class Workflow3(Workflow):
 
     @property
     def _default_cachedir(self):
-        """Alfred 4's default cache directory."""
+        """Alfred 3's default cache directory."""
         return os.path.join(
             os.path.expanduser(
-                '~/Library/Caches/com.runningwithcrayons.Alfred/'
+                '~/Library/Caches/com.runningwithcrayons.Alfred-3/'
                 'Workflow Data/'),
             self.bundleid)
 
     @property
     def _default_datadir(self):
-        """Alfred 4's default data directory."""
+        """Alfred 3's default data directory."""
         return os.path.join(os.path.expanduser(
-            '~/Library/Application Support/Alfred/Workflow Data/'),
+            '~/Library/Application Support/Alfred 3/Workflow Data/'),
             self.bundleid)
 
     @property
@@ -529,10 +522,8 @@ class Workflow3(Workflow):
 
         return self._session_id
 
-    def setvar(self, name, value, persist=False):
+    def setvar(self, name, value):
         """Set a "global" workflow variable.
-
-        .. versionchanged:: 1.33
 
         These variables are always passed to downstream workflow objects.
 
@@ -542,15 +533,9 @@ class Workflow3(Workflow):
         Args:
             name (unicode): Name of variable.
             value (unicode): Value of variable.
-            persist (bool, optional): Also save variable to ``info.plist``?
 
         """
         self.variables[name] = value
-        if persist:
-            from .util import set_config
-            set_config(name, value, self.bundleid)
-            self.logger.debug('saved variable %r with value %r to info.plist',
-                              name, value)
 
     def getvar(self, name, default=None):
         """Return value of workflow variable for ``name`` or ``default``.
@@ -574,9 +559,6 @@ class Workflow3(Workflow):
             match (unicode, optional): If you have "Alfred filters results"
                 turned on for your Script Filter, Alfred (version 3.5 and
                 above) will filter against this field, not ``title``.
-
-        In Alfred 4.1+ and Alfred-Workflow 1.40+, ``arg`` may also be a
-        :class:`list` or :class:`tuple`.
 
         See :meth:`Workflow.add_item() <workflow.Workflow.add_item>` for
         the main documentation and other parameters.
@@ -717,7 +699,6 @@ class Workflow3(Workflow):
 
         Returns:
             Item3: Newly-created item.
-
         """
         if len(self._items):
             return
@@ -727,8 +708,5 @@ class Workflow3(Workflow):
 
     def send_feedback(self):
         """Print stored items to console/Alfred as JSON."""
-        if self.debugging:
-            json.dump(self.obj, sys.stdout, indent=2, separators=(',', ': '))
-        else:
-            json.dump(self.obj, sys.stdout)
+        json.dump(self.obj, sys.stdout)
         sys.stdout.flush()
