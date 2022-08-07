@@ -1,7 +1,7 @@
 # encoding: utf-8
 import json
 
-import pyperclip as pyperclip
+import pyperclip
 
 API_KEY = 'jf'
 
