@@ -5,7 +5,7 @@ import sys
 import browser_cookie3
 import requests as requests
 
-from workflow import Workflow
+from workflow import Workflow, ICON_USER, ICON_GROUP
 
 API_KEY = 'your-pinboard-api-key'
 
@@ -65,11 +65,8 @@ def search_to_direct(cls):
     }
 
 class Search_response():
-    def __init__(self, user):
-        self.__dict__ = user
-
-    def add_user(self, user):
-        self.users.append(user)
+    def __init__(self, result):
+        self.__dict__ = result
 
 def search(query):
     url = "https://apijoyspace.jd.com/v1/search"
@@ -93,10 +90,12 @@ def search(query):
         g_length = 5
 
     for i in range(u_length):
-        wf.add_item(arg=users[i].username, type="user", title="姓名: " + users[i].name, subtitle="erp: " + users[i].username, valid=True, icon=users[i].avatar_url)
+        # users[i].avatar_url
+        wf.add_item(arg=users[i].username, type="user", title="姓名: " + users[i].name, subtitle="erp: " + users[i].username, valid=True, icon=ICON_USER)
 
     for j in range(g_length):
-        wf.add_item(arg=groups[j].gid, type="group", title="群名称: " + groups[j].name, subtitle="owner: " + groups[j].ownername, valid=True, icon=groups[j].avatar)
+        # group[j].avatar
+        wf.add_item(arg=groups[j].gid, type="group", title="群名称: " + groups[j].name, subtitle="owner: " + groups[j].ownername, valid=True, icon=ICON_GROUP)
 
     wf.send_feedback()
     session = requests.session()
@@ -105,4 +104,5 @@ def search(query):
 if __name__ == "__main__":
     wf = Workflow()
     query = sys.argv[1]
+    # query = 'jiangzixu'
     search(query)
